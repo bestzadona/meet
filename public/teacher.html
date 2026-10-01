@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>แดชบอร์ดผู้สอน - Class Clinic</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --text:#1c2230; --muted:#667085; --ok:#12805c; --bad:#c0392b; --accent:#2457d6; --line:#e3e6ec; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12151c; --card:#1b2030; --text:#eef1f7; --muted:#9aa4b8; --ok:#35c28f; --bad:#ff6b5b; --accent:#6c93ff; --line:#2b3248; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family: system-ui, "Noto Sans Thai", sans-serif; background:var(--bg); color:var(--text); padding:16px; }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  h1 { font-size:1.2rem; margin:0; }
+  .tools { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .tools label { font-size:.8rem; color:var(--muted); display:flex; gap:6px; align-items:center; }
+  select, input, button { padding:9px 12px; border-radius:9px; border:1px solid var(--line); background:var(--card); color:var(--text); font-size:.92rem; }
+  button.primary { background:var(--accent); color:#fff; border:0; font-weight:600; cursor:pointer; }
+  .summary { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
+  .pill { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 14px; font-size:.85rem; color:var(--muted); }
+  .pill b { display:block; font-size:1.3rem; color:var(--text); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(250px,1fr)); gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .card.alert { border:2px solid var(--bad); }
+  .thumb { aspect-ratio:16/9; background:#0e1118; display:grid; place-items:center; color:#8a93a8; font-size:.8rem; }
+  .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+  .info { padding:10px 12px; }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .badge { font-size:.75rem; font-weight:700; padding:3px 9px; border-radius:20px; white-space:nowrap; }
+  .badge.sharing { background:color-mix(in srgb, var(--ok) 16%, transparent); color:var(--ok); }
+  .badge.stopped { background:color-mix(in srgb, var(--bad) 16%, transparent); color:var(--bad); }
+  .badge.offline { background:color-mix(in srgb, var(--muted) 18%, transparent); color:var(--muted); }
+  .meta { font-size:.78rem; color:var(--muted); margin-top:6px; line-height:1.55; }
+  .bar { height:5px; background:var(--line); border-radius:3px; margin-top:8px; overflow:hidden; }
+  .bar i { display:block; height:100%; background:var(--ok); }
+  #login { max-width:340px; margin:12vh auto; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:24px; }
+  #login h1 { margin-bottom:14px; }
+  #login input { width:100%; margin-bottom:10px; }
+  .empty { color:var(--muted); padding:40px; text-align:center; grid-column:1/-1; }
+  .hidden { display:none !important; }
+  #conn { font-size:.8rem; color:var(--muted); }
+  #cfgwarn { background:#fff3cd; color:#5c4400; border-radius:10px; padding:12px; font-size:.88rem; margin-bottom:12px; }
+</style>
+</head>
+<body>
+<div id="login">
+  <h1>แดชบอร์ดผู้สอน</h1>
+  <div id="cfgwarn" class="hidden">ยังไม่ได้ตั้งค่า Supabase ในไฟล์ config.js</div>
+  <input id="email" type="email" placeholder="อีเมลผู้สอน" autocomplete="username">
+  <input id="pass" type="password" placeholder="รหัสผ่าน" autocomplete="current-password">
+  <button id="go" class="primary" style="width:100%">เข้าสู่ระบบ</button>
+  <div id="loginErr" style="color:var(--bad);font-size:.85rem;margin-top:8px"></div>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <h1>สถานะการเข้าเรียน <span id="conn"></span></h1>
+    <div class="tools">
+      <select id="classSel"></select>
+      <input id="newClass" placeholder="สร้างห้องใหม่ เช่น MATH101" size="22">
+      <button id="addClass">สร้างห้อง</button>
+    </div>
+  </header>
+  <header>
+    <div class="tools">
+      <label>เริ่มนับตั้งแต่ <input id="since" type="datetime-local"></label>
+      <label>ถึง (ว่าง = ปัจจุบัน) <input id="until" type="datetime-local"></label>
+      <button id="apply">ใช้ช่วงเวลานี้</button>
+    </div>
+    <div class="tools"><button id="csv" class="primary">ดาวน์โหลดรายงาน CSV</button><button id="logout">ออกจากระบบ</button></div>
+  </header>
+  <div class="summary">
+    <div class="pill"><b id="nAll">0</b>ทั้งหมด</div>
+    <div class="pill"><b id="nShare" style="color:var(--ok)">0</b>กำลังแชร์</div>
+    <div class="pill"><b id="nStop" style="color:var(--bad)">0</b>หยุดแชร์</div>
+    <div class="pill"><b id="nOff">0</b>หลุดออกจากระบบ</div>
+  </div>
+  <div id="grid" class="grid"></div>
+</div>
+
+<script src="vendor/supabase.js"></script>
+<script src="config.js"></script>
+<script src="report.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const cfg = window.APP_CONFIG;
+  const configured = cfg && !/YOUR-/.test(cfg.SUPABASE_URL + cfg.SUPABASE_ANON_KEY);
+  if (!configured) { $("cfgwarn").classList.remove("hidden"); $("go").disabled = true; }
+  const sb = configured ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
+    auth: { storageKey: "attendance-teacher", persistSession: true, autoRefreshToken: true },
+  }) : null;
+
+  const LABEL = { sharing: "กำลังแชร์", stopped: "หยุดแชร์", offline: "หลุดออก" };
+  const fmt = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+  const pad = (n) => String(n).padStart(2, "0");
+  const toLocalInput = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+  let classId = "", sinceIso = "", untilIso = "", pollTimer = null, polling = false;
+  let events = [], lastId = 0, thumbs = new Map(), lastThumbAt = null, rows = [];
+  const cards = new Map();
+
+  function resetData() { events = []; lastId = 0; thumbs = new Map(); lastThumbAt = null; rows = []; cards.clear(); $("grid").replaceChildren(); }
+
+  async function boot() {
+    const { data: u } = await sb.auth.getUser();
+    if (!u || !u.user) return false;
+    const { data: t, error } = await sb.from("teachers").select("user_id").limit(1);
+    if (error || !t || !t.length) {
+      await sb.auth.signOut();
+      $("loginErr").textContent = "บัญชีนี้ไม่มีสิทธิ์ผู้สอน (ยังไม่ได้เพิ่มในตาราง teachers)";
+      return false;
+    }
+    $("login").classList.add("hidden"); $("app").classList.remove("hidden");
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    $("since").value = toLocalInput(today);
+    sinceIso = today.toISOString();
+    await loadClasses();
+    startPolling();
+    return true;
+  }
+
+  async function loadClasses(select) {
+    const { data, error } = await sb.from("classes").select("id").order("id");
+    if (error) { $("conn").textContent = "● โหลดรายชื่อห้องไม่ได้"; return; }
+    const sel = $("classSel");
+    sel.innerHTML = "";
+    if (!data.length) sel.innerHTML = '<option value="">ยังไม่มีห้อง ให้สร้างห้องก่อน</option>';
+    data.forEach((c) => { const o = document.createElement("option"); o.value = c.id; o.textContent = c.id; sel.appendChild(o); });
+    if (select) sel.value = select;
+    if (sel.value !== classId) { classId = sel.value; resetData(); }
+  }
+
+  async function fetchNewEvents() {
+    // ดึงทีละ 1000 แถวตามลำดับ id (เกิน 1000 ก็วนต่อ)
+    for (;;) {
+      let q = sb.from("events").select("id,student_id,student_name,type,created_at")
+        .eq("class_id", classId).gte("created_at", sinceIso).gt("id", lastId).order("id").limit(1000);
+      if (untilIso) q = q.lte("created_at", untilIso);
+      const { data, error } = await q;
+      if (error) throw error;
+      if (!data.length) return;
+      events.push(...data);
+      lastId = data[data.length - 1].id;
+      if (data.length < 1000) return;
+    }
+  }
+
+  async function fetchNewThumbs() {
+    let q = sb.from("thumbs").select("student_id,data,updated_at").eq("class_id", classId).order("updated_at").limit(200);
+    if (lastThumbAt) q = q.gt("updated_at", lastThumbAt);
+    const { data, error } = await q;
+    if (error) throw error;
+    for (const t of data) { thumbs.set(t.student_id, { data: t.data, at: t.updated_at }); lastThumbAt = t.updated_at; }
+  }
+
+  async function tick() {
+    if (polling || !classId) return;
+    polling = true;
+    try {
+      await fetchNewEvents();
+      await fetchNewThumbs();
+      $("conn").textContent = "● เชื่อมต่อแล้ว"; $("conn").style.color = "var(--ok)";
+      recompute();
+    } catch (e) {
+      $("conn").textContent = "● เชื่อมต่อไม่ได้ กำลังลองใหม่..."; $("conn").style.color = "var(--bad)";
+    } finally { polling = false; }
+  }
+
+  function recompute() {
+    const now = untilIso ? Date.parse(untilIso) : Date.now();
+    rows = window.AttendanceReport.compute(events, {
+      now, graceMs: cfg.GRACE_SECONDS * 1000, timeoutMs: cfg.OFFLINE_AFTER_SECONDS * 1000,
+    });
+    render();
+  }
+
+  function startPolling() {
+    clearInterval(pollTimer);
+    tick();
+    pollTimer = setInterval(tick, cfg.POLL_SECONDS * 1000);
+  }
+
+  function makeCard() {
+    const el = document.createElement("div");
+    el.className = "card";
+    el.innerHTML = `<div class="thumb"></div><div class="info">
+      <div class="row"><span class="name"></span><span class="badge"></span></div>
+      <div class="meta m1"></div><div class="meta warn" style="color:var(--bad)"></div>
+      <div class="bar"><i></i></div><div class="meta pct"></div></div>`;
+    const q = (c) => el.querySelector(c);
+    return { el, thumb: q(".thumb"), name: q(".name"), badge: q(".badge"), m1: q(".m1"), warn: q(".warn"), bar: q(".bar i"), pct: q(".pct"), img: null, imgAt: null };
+  }
+
+  function updateThumb(c, id, status) {
+    const t = thumbs.get(id);
+    if (status === "sharing" && t) {
+      if (!c.img) { c.img = document.createElement("img"); c.img.alt = ""; }
+      if (c.imgAt !== t.at) { c.img.src = t.data; c.imgAt = t.at; }
+      if (c.thumb.firstChild !== c.img) c.thumb.replaceChildren(c.img);
+    } else {
+      c.thumb.textContent = status === "sharing" ? "รอภาพ..." : "ไม่มีภาพ";
+    }
+  }
+
+  function render() {
+    const list = rows.slice().sort((a, b) => (b.alert - a.alert) || a.name.localeCompare(b.name, "th"));
+    $("nAll").textContent = list.length;
+    $("nShare").textContent = list.filter((s) => s.status === "sharing").length;
+    $("nStop").textContent = list.filter((s) => s.status === "stopped").length;
+    $("nOff").textContent = list.filter((s) => s.status === "offline").length;
+    if (!list.length) { $("grid").innerHTML = '<div class="empty">ยังไม่มีผู้เรียนเข้าห้องในช่วงเวลานี้</div>'; return; }
+    const els = [];
+    for (const s of list) {
+      let c = cards.get(s.studentId);
+      if (!c) { c = makeCard(); cards.set(s.studentId, c); }
+      const total = s.sharedSec + s.stoppedSec + s.offlineSec;
+      const pct = total ? Math.round((s.sharedSec / total) * 100) : 0;
+      c.el.className = "card" + (s.alert ? " alert" : "");
+      c.name.textContent = s.name; c.name.title = s.name;
+      c.badge.textContent = LABEL[s.status]; c.badge.className = "badge " + s.status;
+      c.m1.textContent = `แชร์ ${fmt(s.sharedSec)} · หยุด ${fmt(s.stoppedSec)} · หลุด ${fmt(s.offlineSec)} · หยุดแชร์ ${s.stopCount} ครั้ง · ผิดกติกา ${s.violations} ครั้ง`;
+      c.warn.textContent = s.status === "stopped" ? `หยุดแชร์มาแล้ว ${s.stoppedFor} วินาที${s.alert ? " (เกินกำหนด " + cfg.GRACE_SECONDS + " วินาที)" : ""}` : "";
+      c.warn.style.display = s.status === "stopped" ? "" : "none";
+      c.bar.style.width = pct + "%";
+      c.pct.textContent = `แชร์จอ ${pct}% ของเวลาที่ติดตามได้`;
+      updateThumb(c, s.studentId, s.status);
+      els.push(c.el);
+    }
+    $("grid").replaceChildren(...els);
+  }
+
+  $("go").onclick = async () => {
+    $("loginErr").textContent = "";
+    const { error } = await sb.auth.signInWithPassword({ email: $("email").value.trim(), password: $("pass").value });
+    if (error) { $("loginErr").textContent = "อีเมลหรือรหัสผ่านไม่ถูกต้อง"; return; }
+    await boot();
+  };
+  $("pass").addEventListener("keydown", (e) => { if (e.key === "Enter") $("go").click(); });
+  $("logout").onclick = async () => { clearInterval(pollTimer); await sb.auth.signOut(); location.reload(); };
+  $("classSel").onchange = (e) => { classId = e.target.value; resetData(); tick(); };
+  $("addClass").onclick = async () => {
+    const id = $("newClass").value.trim();
+    if (!id) return;
+    const { error } = await sb.from("classes").insert({ id });
+    if (error) { alert(error.code === "23505" ? "มีห้องนี้อยู่แล้ว" : "สร้างห้องไม่ได้: " + error.message); return; }
+    $("newClass").value = "";
+    await loadClasses(id); tick();
+  };
+  $("apply").onclick = () => {
+    const s = $("since").value, u = $("until").value;
+    sinceIso = s ? new Date(s).toISOString() : new Date(0).toISOString();
+    untilIso = u ? new Date(u).toISOString() : "";
+    resetData(); tick();
+  };
+  $("csv").onclick = () => {
+    const blob = new Blob([window.AttendanceReport.toCsv(rows, classId)], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = `attendance-${classId}.csv`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+
+  if (configured) boot().catch(() => {});
+})();
+</script>
+</body>
+</html>

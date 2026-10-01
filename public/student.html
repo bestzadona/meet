@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>เข้าเรียนออนไลน์ - Class Clinic</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --text:#1c2230; --muted:#667085; --ok:#12805c; --bad:#c0392b; --accent:#2457d6; --line:#e3e6ec; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12151c; --card:#1b2030; --text:#eef1f7; --muted:#9aa4b8; --ok:#35c28f; --bad:#ff6b5b; --accent:#6c93ff; --line:#2b3248; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, "Noto Sans Thai", sans-serif; background:var(--bg); color:var(--text); min-height:100vh; display:grid; place-items:center; padding:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:24px; width:100%; max-width:440px; }
+  h1 { font-size:1.25rem; margin:0 0 4px; }
+  p.sub { color:var(--muted); margin:0 0 18px; font-size:.92rem; }
+  label { display:block; font-size:.85rem; color:var(--muted); margin:12px 0 4px; }
+  input { width:100%; padding:11px 12px; border-radius:9px; border:1px solid var(--line); background:transparent; color:var(--text); font-size:1rem; }
+  button { width:100%; margin-top:18px; padding:13px; border:0; border-radius:10px; background:var(--accent); color:#fff; font-size:1rem; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  .notice { font-size:.8rem; color:var(--muted); margin-top:14px; line-height:1.5; }
+  .status { display:flex; align-items:center; gap:10px; padding:14px; border-radius:10px; margin:14px 0; font-weight:600; }
+  .status.ok { background:color-mix(in srgb, var(--ok) 14%, transparent); color:var(--ok); }
+  .status.bad { background:color-mix(in srgb, var(--bad) 14%, transparent); color:var(--bad); }
+  .dot { width:10px; height:10px; border-radius:50%; background:currentColor; }
+  .ok .dot { animation: pulse 1.6s infinite; }
+  @keyframes pulse { 50% { opacity:.3; } }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:6px; }
+  .stat { border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .stat b { display:block; font-size:1.2rem; font-variant-numeric: tabular-nums; }
+  .stat span { font-size:.78rem; color:var(--muted); }
+  .hidden { display:none !important; }
+  #overlay { position:fixed; inset:0; background:rgba(10,12,18,.88); display:grid; place-items:center; padding:24px; z-index:10; }
+  #overlay .box { background:var(--card); border-radius:14px; padding:26px; max-width:420px; text-align:center; border:2px solid var(--bad); }
+  #overlay h2 { margin:0 0 8px; color:var(--bad); }
+  #err { color:var(--bad); font-size:.88rem; margin-top:10px; min-height:1.2em; }
+  #cfgwarn { background:#fff3cd; color:#5c4400; border-radius:10px; padding:12px; font-size:.88rem; margin-bottom:12px; }
+  video { display:none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>เข้าเรียนออนไลน์</h1>
+  <p class="sub">เปิดหน้านี้ค้างไว้ในหน้าต่างแยก คู่กับห้องเรียน (Zoom / Meet / Teams) ตลอดคาบ</p>
+  <div id="cfgwarn" class="hidden">ยังไม่ได้ตั้งค่า Supabase ในไฟล์ config.js</div>
+
+  <div id="login">
+    <label for="classId">รหัสห้องเรียน</label>
+    <input id="classId" placeholder="เช่น MATH101" autocomplete="off">
+    <label for="name">ชื่อ-นามสกุล</label>
+    <input id="name" placeholder="ชื่อ-นามสกุลของคุณ" autocomplete="name">
+    <button id="start">เริ่มเข้าเรียน และแชร์ทั้งหน้าจอ</button>
+    <div id="err"></div>
+    <p class="notice">
+      ระบบจะขอให้คุณเลือก <b>"ทั้งหน้าจอ (Entire screen)"</b> และบันทึกเวลาที่แชร์ ภาพหน้าจอย่อขนาดเล็กจะถูกส่งให้ผู้สอนเป็นระยะเพื่อยืนยันการเข้าเรียน
+      ข้อมูลใช้เพื่อการเช็กชื่อเท่านั้น ก่อนกดเริ่ม ควรปิดการแจ้งเตือนหรือแอปส่วนตัวที่ไม่ต้องการให้เห็น
+    </p>
+  </div>
+
+  <div id="session" class="hidden">
+    <div id="statusBox" class="status ok"><span class="dot"></span><span id="statusText">กำลังแชร์หน้าจอ</span></div>
+    <div class="stats">
+      <div class="stat"><b id="tShared">00:00</b><span>เวลาที่แชร์จอ</span></div>
+      <div class="stat"><b id="tStopped">00:00</b><span>เวลาที่หยุดแชร์</span></div>
+    </div>
+    <p id="netWarn" class="notice hidden" style="color:var(--bad)">เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ชั่วคราว กำลังลองใหม่...</p>
+    <p class="notice">ห้ามปิดหน้านี้ หากหยุดแชร์ ระบบจะแจ้งผู้สอนและบันทึกเวลาที่ขาด</p>
+  </div>
+</div>
+
+<div id="overlay" class="hidden">
+  <div class="box">
+    <h2>หยุดแชร์หน้าจอแล้ว</h2>
+    <p>กรุณากดแชร์ทั้งหน้าจออีกครั้งเพื่อเรียนต่อ</p>
+    <p>เวลาที่หยุดแชร์: <b id="overlayTimer">0</b> วินาที</p>
+    <button id="reshare">แชร์ทั้งหน้าจออีกครั้ง</button>
+    <div id="err2" style="color:var(--bad);font-size:.88rem;margin-top:10px"></div>
+  </div>
+</div>
+
+<video id="vid" autoplay muted playsinline></video>
+<canvas id="cv" class="hidden"></canvas>
+
+<script src="vendor/supabase.js"></script>
+<script src="config.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const cfg = window.APP_CONFIG;
+  const configured = cfg && !/YOUR-/.test(cfg.SUPABASE_URL + cfg.SUPABASE_ANON_KEY);
+  if (!configured) { $("cfgwarn").classList.remove("hidden"); $("start").disabled = true; }
+
+  // เก็บ session ของผู้เรียนแยกจากของผู้สอน
+  const sb = configured ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
+    auth: { storageKey: "attendance-student", persistSession: true, autoRefreshToken: true },
+  }) : null;
+
+  let joined = null, stream = null, sharing = false, ready = false;
+  let sharedMs = 0, stoppedMs = 0, lastTick = Date.now();
+  let hbTimer, frameTimer, clockTimer, flushing = false;
+  const queue = []; // เหตุการณ์ที่ส่งไม่สำเร็จ รอส่งใหม่ตามลำดับ
+
+  const fmt = (ms) => { const s = Math.floor(ms / 1000); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); };
+  const surfaceOf = (s) => s.getVideoTracks()[0].getSettings().displaySurface || "unknown";
+
+  async function ensureSession() {
+    const { data } = await sb.auth.getSession();
+    if (data.session) return;
+    const { error } = await sb.auth.signInAnonymously();
+    if (error) throw new Error("เข้าสู่ระบบไม่ได้: " + error.message);
+  }
+
+  async function sendEvent(type, surface) {
+    queue.push({ class_id: joined.classId, student_name: joined.name, type, surface: surface || null });
+    await flush();
+  }
+
+  async function flush() {
+    if (flushing) return;
+    flushing = true;
+    try {
+      while (queue.length) {
+        const { error } = await sb.from("events").insert(queue[0]);
+        if (error) {
+          if (error.code === "23503") { queue.length = 0; throw new Error("ไม่พบรหัสห้องเรียนนี้ กรุณาตรวจสอบกับผู้สอน"); }
+          $("netWarn").classList.remove("hidden");
+          return;
+        }
+        queue.shift();
+        $("netWarn").classList.add("hidden");
+      }
+    } finally { flushing = false; }
+  }
+
+  async function requestShare() {
+    const s = await navigator.mediaDevices.getDisplayMedia({
+      video: { displaySurface: "monitor", frameRate: 2 },
+      audio: false,
+      monitorTypeSurfaces: "include",
+      selfBrowserSurface: "exclude",
+    });
+    const surface = surfaceOf(s);
+    if (surface !== "monitor" && surface !== "unknown") {
+      s.getTracks().forEach((t) => t.stop());
+      sendEvent("share_rejected", surface).catch(() => {});
+      throw new Error('ต้องเลือก "ทั้งหน้าจอ (Entire screen)" ไม่ใช่แท็บหรือหน้าต่าง');
+    }
+    stream = s;
+    s.getVideoTracks()[0].addEventListener("ended", onEnded);
+    $("vid").srcObject = s;
+    return surface;
+  }
+
+  async function onShareStarted(surface) {
+    sharing = true;
+    hideStopped();
+    await sendEvent("share_started", surface);
+    startFrames();
+  }
+
+  function onEnded() {
+    sharing = false;
+    clearInterval(frameTimer);
+    stream = null;
+    showStopped();
+    sendEvent("share_stopped").catch(() => {});
+  }
+
+  function startFrames() {
+    clearInterval(frameTimer);
+    const grab = async () => {
+      const v = $("vid"), c = $("cv");
+      if (!sharing || !v.videoWidth) return;
+      const w = 240, h = Math.round((v.videoHeight / v.videoWidth) * w);
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(v, 0, 0, w, h);
+      const data = c.toDataURL("image/jpeg", 0.4);
+      await sb.from("thumbs").upsert(
+        { class_id: joined.classId, student_name: joined.name, data },
+        { onConflict: "class_id,student_id" }
+      );
+    };
+    setTimeout(grab, 800);
+    frameTimer = setInterval(grab, cfg.FRAME_SECONDS * 1000);
+  }
+
+  function startHeartbeat() {
+    clearInterval(hbTimer);
+    hbTimer = setInterval(() => { sendEvent(sharing ? "heartbeat_sharing" : "heartbeat_stopped").catch(() => {}); }, cfg.HEARTBEAT_SECONDS * 1000);
+  }
+
+  function showStopped(msg) {
+    $("overlay").classList.remove("hidden");
+    if (msg) $("err2").textContent = msg;
+    $("statusBox").className = "status bad";
+    $("statusText").textContent = "หยุดแชร์หน้าจอ";
+  }
+  function hideStopped() {
+    $("overlay").classList.add("hidden");
+    $("err2").textContent = "";
+    $("statusBox").className = "status ok";
+    $("statusText").textContent = "กำลังแชร์หน้าจอ";
+  }
+
+  function startClock() {
+    lastTick = Date.now();
+    let overlaySince = null;
+    clockTimer = setInterval(() => {
+      const now = Date.now(), d = now - lastTick; lastTick = now;
+      if (sharing) { sharedMs += d; overlaySince = null; }
+      else { stoppedMs += d; overlaySince = overlaySince || now - d; $("overlayTimer").textContent = Math.round((now - overlaySince) / 1000); }
+      $("tShared").textContent = fmt(sharedMs);
+      $("tStopped").textContent = fmt(stoppedMs);
+    }, 500);
+  }
+
+  if (configured) ensureSession().then(() => { ready = true; }).catch((e) => { $("err").textContent = e.message; });
+
+  $("start").onclick = async () => {
+    const classId = $("classId").value.trim(), name = $("name").value.trim();
+    $("err").textContent = "";
+    if (!classId || !name) { $("err").textContent = "กรุณากรอกรหัสห้องเรียนและชื่อ"; return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      $("err").textContent = "อุปกรณ์นี้แชร์หน้าจอผ่านเบราว์เซอร์ไม่ได้ (มือถือ/แท็บเล็ตส่วนใหญ่ไม่รองรับ) กรุณาใช้คอมพิวเตอร์ด้วย Chrome หรือ Edge";
+      return;
+    }
+    $("start").disabled = true;
+    try {
+      // ขอแชร์จอทันทีขณะที่ยังอยู่ในจังหวะที่ผู้ใช้เพิ่งกดปุ่ม (เบราว์เซอร์กำหนด)
+      const surface = await requestShare();
+      if (!ready) await ensureSession();
+      joined = { classId, name };
+      await sendEvent("join");               // ถ้ารหัสห้องผิด จะ throw ตรงนี้
+      await onShareStarted(surface);
+      startHeartbeat();
+      $("login").classList.add("hidden");
+      $("session").classList.remove("hidden");
+      startClock();
+    } catch (e) {
+      joined = null;
+      if (stream) { stream.getTracks().forEach((t) => { t.removeEventListener("ended", onEnded); t.stop(); }); stream = null; }
+      sharing = false;
+      $("err").textContent = e.name === "NotAllowedError" ? "คุณยังไม่ได้อนุญาตให้แชร์หน้าจอ" : e.message;
+      $("start").disabled = false;
+    }
+  };
+
+  $("reshare").onclick = async () => {
+    $("err2").textContent = "";
+    try {
+      const surface = await requestShare();
+      await onShareStarted(surface);
+    } catch (e) { $("err2").textContent = e.name === "NotAllowedError" ? "คุณยังไม่ได้อนุญาตให้แชร์หน้าจอ" : e.message; }
+  };
+
+  window.addEventListener("beforeunload", (e) => { if (joined) { e.preventDefault(); e.returnValue = ""; } });
+})();
+</script>
+</body>
+</html>
