@@ -35,7 +35,7 @@
   #overlay h2 { margin:0 0 8px; color:var(--bad); }
   #err { color:var(--bad); font-size:.88rem; margin-top:10px; min-height:1.2em; }
   #cfgwarn { background:#fff3cd; color:#5c4400; border-radius:10px; padding:12px; font-size:.88rem; margin-bottom:12px; }
-  video { display:none; }
+  #vid { display:block; width:100%; border-radius:8px; border:1px solid var(--line); background:#000; }
 </style>
 </head>
 <body>
@@ -63,6 +63,12 @@
       <div class="stat"><b id="tShared">00:00</b><span>เวลาที่แชร์จอ</span></div>
       <div class="stat"><b id="tStopped">00:00</b><span>เวลาที่หยุดแชร์</span></div>
     </div>
+    <div id="previewBox">
+      <p class="notice" style="margin-bottom:6px">หน้าจอที่คุณกำลังแชร์ (ถ้าตรงนี้เป็นสีดำ แปลว่าเครื่องจับภาพไม่ได้):</p>
+      <video id="vid" autoplay muted playsinline></video>
+      <p id="dbg" class="notice" style="margin-top:6px"></p>
+      <p id="blackWarn" class="notice hidden" style="color:var(--bad)">จับภาพหน้าจอได้เป็นสีดำ ผู้สอนจะยังไม่เห็นภาพ กรุณาแจ้งผู้สอน หรือตรวจสิทธิ์การบันทึกหน้าจอของเบราว์เซอร์ในการตั้งค่าเครื่อง</p>
+    </div>
     <p id="netWarn" class="notice hidden" style="color:var(--bad)">เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ชั่วคราว กำลังลองใหม่...</p>
     <p class="notice">ห้ามปิดหน้านี้ หากหยุดแชร์ ระบบจะแจ้งผู้สอนและบันทึกเวลาที่ขาด</p>
   </div>
@@ -78,7 +84,6 @@
   </div>
 </div>
 
-<video id="vid" autoplay muted playsinline></video>
 <canvas id="cv" class="hidden"></canvas>
 
 <script src="vendor/supabase.js"></script>
@@ -168,21 +173,66 @@
 
   function startFrames() {
     clearInterval(frameTimer);
-    const grab = async () => {
-      const v = $("vid"), c = $("cv");
-      if (!sharing || !v.videoWidth) return;
-      const w = 240, h = Math.round((v.videoHeight / v.videoWidth) * w);
-      c.width = w; c.height = h;
-      c.getContext("2d").drawImage(v, 0, 0, w, h);
+    capture = null;
+    setTimeout(grabAndUpload, 1200);
+    frameTimer = setInterval(grabAndUpload, cfg.FRAME_SECONDS * 1000);
+  }
+
+  // จับภาพหลายวิธี เลือกวิธีแรกที่ได้ภาพไม่ดำ
+  //  - video: ใช้ตัวเล่นวิดีโอที่แสดงอยู่บนหน้า (เสถียรเมื่อหน้าต่างมองเห็น)
+  //  - ImageCapture: ดึงจาก track ตรง ๆ (ใช้ได้แม้แท็บถูกซ่อน)
+  let capture = null, grabbing = false;
+  const fromVideo = async () => {
+    const v = $("vid");
+    return (v.videoWidth > 0 && v.readyState >= 2) ? { src: v, w: v.videoWidth, h: v.videoHeight, how: "video", close() {} } : null;
+  };
+  const fromCapture = async () => {
+    const track = stream && stream.getVideoTracks()[0];
+    if (!track || !("ImageCapture" in window)) return null;
+    try {
+      if (!capture) capture = new ImageCapture(track);
+      const bmp = await capture.grabFrame();
+      return { src: bmp, w: bmp.width, h: bmp.height, how: "ImageCapture", close() { if (bmp.close) bmp.close(); } };
+    } catch (e) { capture = null; return null; }
+  };
+  function paint(c, f) {
+    const w = 240, h = Math.max(1, Math.round((f.h / f.w) * w));
+    c.width = w; c.height = h;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(f.src, 0, 0, w, h);
+    f.close();
+    const px = ctx.getImageData(0, 0, w, h).data;
+    for (let i = 0; i < px.length; i += 4) { if (px[i] | px[i + 1] | px[i + 2]) return true; }
+    return false;
+  }
+
+  async function grabAndUpload() {
+    if (!sharing || !joined || grabbing) return;
+    grabbing = true;
+    try {
+      const c = $("cv");
+      const order = document.hidden ? [fromCapture, fromVideo] : [fromVideo, fromCapture];
+      let lit = false, info = "ยังไม่ได้รับภาพจากการแชร์จอ";
+      for (const get of order) {
+        const f = await get();
+        if (!f) continue;
+        const how = f.how, size = f.w + "×" + f.h;
+        lit = paint(c, f);
+        info = "วิธีจับภาพ: " + how + " · " + size + (lit ? "" : " · ภาพดำ");
+        if (lit) break;
+      }
+      $("dbg").textContent = info;
+      $("blackWarn").classList.toggle("hidden", lit || info.startsWith("ยังไม่ได้รับ"));
+      if (!lit) return; // ไม่ส่งภาพที่ดำสนิท
       const data = c.toDataURL("image/jpeg", 0.4);
       await sb.from("thumbs").upsert(
         { class_id: joined.classId, student_name: joined.name, data },
         { onConflict: "class_id,student_id" }
       );
-    };
-    setTimeout(grab, 800);
-    frameTimer = setInterval(grab, cfg.FRAME_SECONDS * 1000);
+    } catch (e) { /* ลองใหม่รอบถัดไป */ }
+    finally { grabbing = false; }
   }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) grabAndUpload(); });
 
   function startHeartbeat() {
     clearInterval(hbTimer);

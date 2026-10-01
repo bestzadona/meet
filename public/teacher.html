@@ -196,7 +196,10 @@
 
   function updateThumb(c, id, status) {
     const t = thumbs.get(id);
-    if (status === "sharing" && t) {
+    // ภาพเก่าค้างจากครั้งก่อน (เก่ากว่า 3 รอบการส่ง) ไม่นำมาแสดง จะได้ไม่เข้าใจผิดว่าเป็นหน้าจอปัจจุบัน
+    const staleMs = Math.max(cfg.FRAME_SECONDS * 3, 45) * 1000;
+    const fresh = t && (Date.now() - Date.parse(t.at)) < staleMs;
+    if (status === "sharing" && fresh) {
       if (!c.img) { c.img = document.createElement("img"); c.img.alt = ""; }
       if (c.imgAt !== t.at) { c.img.src = t.data; c.imgAt = t.at; }
       if (c.thumb.firstChild !== c.img) c.thumb.replaceChildren(c.img);
