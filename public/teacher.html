@@ -38,6 +38,14 @@
   #login { max-width:340px; margin:12vh auto; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:24px; }
   #login h1 { margin-bottom:14px; }
   #login input { width:100%; margin-bottom:10px; }
+  .thumb.zoomable { cursor:zoom-in; }
+  #zoom { position:fixed; inset:0; z-index:50; background:rgba(5,7,12,.88); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:16px; }
+  #zoom .bar2 { width:min(100%, 1600px); display:flex; justify-content:space-between; align-items:center; gap:12px; color:#eef1f7; }
+  #zoom .bar2 b { font-size:1.05rem; }
+  #zoom .bar2 span { font-size:.85rem; color:#9aa4b8; }
+  #zoom .stage { width:min(100%, 1600px); flex:1; min-height:0; display:grid; place-items:center; color:#9aa4b8; }
+  #zoom img { max-width:100%; max-height:100%; object-fit:contain; border-radius:8px; background:#000; }
+  #zoomClose { background:#2b3248; color:#fff; border:0; cursor:pointer; }
   .empty { color:var(--muted); padding:40px; text-align:center; grid-column:1/-1; }
   .hidden { display:none !important; }
   #conn { font-size:.8rem; color:var(--muted); }
@@ -80,6 +88,14 @@
   <div id="grid" class="grid"></div>
 </div>
 
+<div id="zoom" class="hidden">
+  <div class="bar2">
+    <div><b id="zoomName"></b> <span id="zoomInfo"></span></div>
+    <button id="zoomClose">ปิด (Esc)</button>
+  </div>
+  <div class="stage" id="zoomStage"></div>
+</div>
+
 <script src="vendor/supabase.js"></script>
 <script src="config.js"></script>
 <script src="report.js"></script>
@@ -102,7 +118,10 @@
   let events = [], lastId = 0, thumbs = new Map(), lastThumbAt = null, rows = [];
   const cards = new Map();
 
-  function resetData() { events = []; lastId = 0; thumbs = new Map(); lastThumbAt = null; rows = []; cards.clear(); $("grid").replaceChildren(); }
+  let zoomId = null;
+  const zoomImg = document.createElement("img"); zoomImg.alt = "";
+
+  function resetData() { closeZoom(); events = []; lastId = 0; thumbs = new Map(); lastThumbAt = null; rows = []; cards.clear(); $("grid").replaceChildren(); }
 
   async function boot() {
     const { data: u } = await sb.auth.getUser();
@@ -191,14 +210,50 @@
       <div class="meta m1"></div><div class="meta warn" style="color:var(--bad)"></div>
       <div class="bar"><i></i></div><div class="meta pct"></div></div>`;
     const q = (c) => el.querySelector(c);
-    return { el, thumb: q(".thumb"), name: q(".name"), badge: q(".badge"), m1: q(".m1"), warn: q(".warn"), bar: q(".bar i"), pct: q(".pct"), img: null, imgAt: null };
+    const c = { el, thumb: q(".thumb"), name: q(".name"), badge: q(".badge"), m1: q(".m1"), warn: q(".warn"), bar: q(".bar i"), pct: q(".pct"), img: null, imgAt: null, id: null };
+    c.thumb.classList.add("zoomable");
+    c.thumb.title = "คลิกเพื่อขยายหน้าจอ";
+    c.thumb.onclick = () => openZoom(c.id);
+    return c;
+  }
+
+  // หน้าต่างขยายหน้าจอผู้เรียน อัปเดตภาพเองทุกครั้งที่แดชบอร์ดรีเฟรช
+  function openZoom(id) {
+    if (!id) return;
+    zoomId = id;
+    $("zoom").classList.remove("hidden");
+    updateZoom();
+  }
+  function closeZoom() { zoomId = null; $("zoom").classList.add("hidden"); }
+  function updateZoom() {
+    if (!zoomId) return;
+    const s = rows.find((r) => r.studentId === zoomId);
+    if (!s) { closeZoom(); return; }
+    const t = thumbs.get(zoomId);
+    $("zoomName").textContent = s.name;
+    const ago = t ? Math.max(0, Math.round((Date.now() - Date.parse(t.at)) / 1000)) : null;
+    $("zoomInfo").textContent = LABEL[s.status] + (ago !== null ? ` · ภาพเมื่อ ${ago} วินาทีที่แล้ว` : "");
+    if (s.status === "sharing" && isFresh(t)) {
+      if (zoomImg.dataset.at !== t.at) { zoomImg.src = t.data; zoomImg.dataset.at = t.at; }
+      if ($("zoomStage").firstChild !== zoomImg) $("zoomStage").replaceChildren(zoomImg);
+    } else {
+      $("zoomStage").textContent = s.status === "sharing" ? "รอภาพ..." : "ไม่มีภาพ (ผู้เรียนไม่ได้แชร์หน้าจออยู่)";
+    }
+  }
+  $("zoomClose").onclick = closeZoom;
+  $("zoom").addEventListener("click", (e) => { if (e.target.id === "zoom" || e.target.id === "zoomStage") closeZoom(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeZoom(); });
+
+  function isFresh(t) {
+    // ภาพเก่าค้างจากครั้งก่อน (เก่ากว่า 3 รอบการส่ง) ไม่นำมาแสดง จะได้ไม่เข้าใจผิดว่าเป็นหน้าจอปัจจุบัน
+    const staleMs = Math.max(cfg.FRAME_SECONDS * 3, 45) * 1000;
+    return !!t && (Date.now() - Date.parse(t.at)) < staleMs;
   }
 
   function updateThumb(c, id, status) {
     const t = thumbs.get(id);
-    // ภาพเก่าค้างจากครั้งก่อน (เก่ากว่า 3 รอบการส่ง) ไม่นำมาแสดง จะได้ไม่เข้าใจผิดว่าเป็นหน้าจอปัจจุบัน
-    const staleMs = Math.max(cfg.FRAME_SECONDS * 3, 45) * 1000;
-    const fresh = t && (Date.now() - Date.parse(t.at)) < staleMs;
+    c.id = id;
+    const fresh = isFresh(t);
     if (status === "sharing" && fresh) {
       if (!c.img) { c.img = document.createElement("img"); c.img.alt = ""; }
       if (c.imgAt !== t.at) { c.img.src = t.data; c.imgAt = t.at; }
@@ -214,6 +269,7 @@
     $("nShare").textContent = list.filter((s) => s.status === "sharing").length;
     $("nStop").textContent = list.filter((s) => s.status === "stopped").length;
     $("nOff").textContent = list.filter((s) => s.status === "offline").length;
+    updateZoom();
     if (!list.length) { $("grid").innerHTML = '<div class="empty">ยังไม่มีผู้เรียนเข้าห้องในช่วงเวลานี้</div>'; return; }
     const els = [];
     for (const s of list) {

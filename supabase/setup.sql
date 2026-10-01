@@ -29,10 +29,13 @@ create table if not exists public.thumbs (
   class_id     text not null references public.classes (id) on delete cascade,
   student_id   uuid not null default auth.uid(),
   student_name text not null check (char_length(student_name) between 1 and 60),
-  data         text not null check (char_length(data) < 60000),
+  data         text not null check (char_length(data) < 400000),
   updated_at   timestamptz not null default now(),
   primary key (class_id, student_id)
 );
+-- ขยายเพดานขนาดภาพสำหรับฐานข้อมูลที่สร้างตารางไว้แล้ว (เดิม 60000 ใช้กับภาพกว้าง 240 พิกเซล)
+alter table public.thumbs drop constraint if exists thumbs_data_check;
+alter table public.thumbs add constraint thumbs_data_check check (char_length(data) < 400000);
 create index if not exists thumbs_updated_idx on public.thumbs (class_id, updated_at);
 
 -- ตั้ง updated_at จากเวลาเซิร์ฟเวอร์เสมอ

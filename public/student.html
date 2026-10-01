@@ -196,7 +196,7 @@
     } catch (e) { capture = null; return null; }
   };
   function paint(c, f) {
-    const w = 240, h = Math.max(1, Math.round((f.h / f.w) * w));
+    const w = Math.min(cfg.THUMB_WIDTH || 240, f.w), h = Math.max(1, Math.round((f.h / f.w) * w));
     c.width = w; c.height = h;
     const ctx = c.getContext("2d", { willReadFrequently: true });
     ctx.drawImage(f.src, 0, 0, w, h);
@@ -224,7 +224,9 @@
       $("dbg").textContent = info;
       $("blackWarn").classList.toggle("hidden", lit || info.startsWith("ยังไม่ได้รับ"));
       if (!lit) return; // ไม่ส่งภาพที่ดำสนิท
-      const data = c.toDataURL("image/jpeg", 0.4);
+      let data = c.toDataURL("image/jpeg", cfg.THUMB_QUALITY || 0.4);
+      // หน้าจอที่มีรายละเอียดมากอาจได้ไฟล์ใหญ่เกินเพดานในฐานข้อมูล (400,000 ตัวอักษร) ให้ลดคุณภาพลง
+      if (data.length >= 400000) data = c.toDataURL("image/jpeg", 0.25);
       await sb.from("thumbs").upsert(
         { class_id: joined.classId, student_name: joined.name, data },
         { onConflict: "class_id,student_id" }
